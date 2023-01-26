@@ -1,0 +1,5 @@
+/vendor
+/var/log
+.env
+.env.test
+.phpunit.result.cache

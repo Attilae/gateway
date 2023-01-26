@@ -1,0 +1,28 @@
+#!/usr/bin/env php
+<?php
+
+require __DIR__ . '/vendor/autoload.php';
+require __DIR__ . '/config/env.php';
+
+$logger = \App\Factory\LoggerFactory::create();
+
+require __DIR__ . '/config/error.php';
+
+use Symfony\Component\Console\Application;
+
+$application = new Application();
+
+$handle = opendir('./src/Command');
+
+while (false !== ($entry = readdir($handle))) {
+    if (in_array($entry, ['.', '..'])) {
+        continue;
+    }
+
+    $commandClass = 'App\\Command\\' . basename($entry, '.php');
+
+    $application->add(new $commandClass);
+
+}
+
+$application->run();

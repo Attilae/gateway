@@ -1,0 +1,11 @@
+/data
+/.env
+/.env.bck
+/.circleci/screenshots
+/.config
+/dump.sql
+/php/tmp
+/setup.log
+/.devcontainer
+/docker-compose.yml
+/Dockerfile

@@ -1,0 +1,130 @@
+
+# IndiePartners CircleCI template
+
+version: 2.1
+orbs:
+  aws-cli: circleci/aws-cli@0.1.13
+  aws-ecs: circleci/aws-ecs@0.0.8
+executors:
+  docker-php-build:
+    environment:
+      IMAGE_NAME: indiepartners/gateway
+    docker:
+      - image: indiepartners/sysops-php:circleci
+        auth:
+          username: $DOCKER_HUB_USER
+          password: $DOCKER_HUB_PASSWORD
+jobs:
+  bootstrap:
+    executor: docker-php-build
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run:
+          name: Install Composer
+          command: 'cd php; composer install'
+      - run:
+          name: Cleaning folder
+          command: 'cd php; rm phpunit.xml'
+      - persist_to_workspace:
+          root: .
+          paths:
+            - ./*
+  build:
+    executor: docker-php-build
+    steps:
+      - attach_workspace:
+          at: /root/project
+      - setup_remote_docker
+      - run:
+          name: Logging to docker
+          command: |
+            echo "$DOCKER_HUB_PASSWORD" | docker login -u "$DOCKER_HUB_USER" --password-stdin
+      - run:
+          name: Building Docker Image
+          command: |
+            docker build -t $IMAGE_NAME:${CIRCLE_TAG} .
+      - run:
+          name: Push Docker Image
+          command: |
+            docker push $IMAGE_NAME:${CIRCLE_TAG}
+  deploy-staging:
+    docker:
+      - image: 'circleci/python:3.7.1'
+    steps:
+      - aws-cli/install
+      - aws-cli/configure:
+          aws-access-key-id: AWS_ACCESS_KEY_ID
+          aws-region: AWS_REGION
+      - aws-ecs/update-service:
+          family: '${ECS_TASK_FAMILY}'
+          cluster-name: '${ECS_CLUSTER_NAME}'
+          service-name: '${ECS_SERVICE_NAME}'
+          container-image-name-updates: 'container=${ECS_CONTAINER_NAME},image-and-tag=${IMAGE_NAME}:${CIRCLE_TAG}'
+  deploy-prod:
+    docker:
+      - image: 'circleci/python:3.7.1'
+    steps:
+      - aws-cli/install
+      - aws-cli/configure:
+          aws-access-key-id: AWS_ACCESS_KEY_ID
+          aws-region: AWS_REGION
+      - aws-ecs/update-service:
+          family: '${ECS_TASK_FAMILY}'
+          cluster-name: '${ECS_CLUSTER_NAME}'
+          service-name: '${ECS_SERVICE_NAME}'
+          container-image-name-updates: 'container=${ECS_CONTAINER_NAME},image-and-tag=${IMAGE_NAME}:${CIRCLE_TAG}'
+
+workflows:
+  version: 2
+  build-deploy:
+    jobs:
+      - bootstrap:
+          context: org-global
+          filters:
+            branches:
+              only:
+                - /feat\/.*/
+                - /fix\/.*/
+                - /hotfix\/.*/
+                - /release\/.*/
+                - master
+            tags:
+              only: /^[0-9.]+$/
+      - build:
+          context: gateway-staging
+          requires:
+            - bootstrap
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /^[0-9.]+$/
+      - deploy-staging:
+          context: gateway-staging
+          requires:
+            - build
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /^[0-9.]+$/
+      - confirmation:
+          type: approval
+          requires:
+            - deploy-staging
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /^[0-9.]+$/
+      - deploy-prod:
+          context: gateway-prod
+          requires:
+            - confirmation
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /^[0-9.]+$/
+        
